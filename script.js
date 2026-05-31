@@ -1,111 +1,174 @@
-const inputs = {
-  daysWorked: document.getElementById("daysWorked"),
-  patientRvu: document.getElementById("patientRvu"),
-  patientsPerDay: document.getElementById("patientsPerDay"),
-  rvuRate: document.getElementById("rvuRate")
+const storageKey = "mgma-rvu-calculator-v2";
+
+const defaults = {
+  daysWorked: 265,
+  perPatientRvu: 1.6,
+  patientsPerDay: 16,
+  rvuValue: 42,
+  tiers: [
+    { percentile: "60th", threshold: 6000, bonus: 10 },
+    { percentile: "70th", threshold: 7500, bonus: 15 }
+  ]
 };
 
-const outputs = {
-  totalRvus: document.getElementById("totalRvus"),
+let state = loadState();
+
+const fields = {
+  daysWorked: document.getElementById("daysWorked"),
+  perPatientRvu: document.getElementById("perPatientRvu"),
+  patientsPerDay: document.getElementById("patientsPerDay"),
+  rvuValue: document.getElementById("rvuValue"),
+  tierRows: document.getElementById("tierRows"),
+  annualRvusTop: document.getElementById("annualRvusTop"),
+  rvuFormula: document.getElementById("rvuFormula"),
+  annualRvus: document.getElementById("annualRvus"),
   productionSalary: document.getElementById("productionSalary"),
-  bonusLabel: document.getElementById("bonusLabel"),
+  salaryFormula: document.getElementById("salaryFormula"),
+  currentBonus: document.getElementById("currentBonus"),
+  bonusTierText: document.getElementById("bonusTierText"),
   bonusAmount: document.getElementById("bonusAmount"),
+  bonusFormula: document.getElementById("bonusFormula"),
   finalSalary: document.getElementById("finalSalary")
 };
 
-const bonusTierBody = document.getElementById("bonusTierBody");
-const addTierButton = document.getElementById("addTier");
-
-let bonusTiers = [
-  { percentile: 60, threshold: 6000, bonus: 10 },
-  { percentile: 70, threshold: 7500, bonus: 15 }
-];
-
-const dollars = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0
-});
-
-const number = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 0
-});
-
-function getValue(input) {
-  return Number(input.value) || 0;
+function loadState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey));
+    if (!saved) return structuredClone(defaults);
+    return { ...structuredClone(defaults), ...saved, tiers: saved.tiers?.length ? saved.tiers : structuredClone(defaults.tiers) };
+  } catch {
+    return structuredClone(defaults);
+  }
 }
 
-function getHighestBonusTier(totalRvus) {
-  return bonusTiers
-    .filter(tier => totalRvus >= Number(tier.threshold || 0))
-    .sort((a, b) => Number(b.threshold || 0) - Number(a.threshold || 0))[0] || null;
+function saveState() {
+  localStorage.setItem(storageKey, JSON.stringify(state));
 }
 
-function renderBonusTiers() {
-  bonusTierBody.innerHTML = "";
+function fmtNumber(value, digits = 0) {
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
 
-  bonusTiers.forEach((tier, index) => {
-    const row = document.createElement("tr");
+function fmtMoney(value) {
+  return Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
 
+function setAssumptionInputs() {
+  fields.daysWorked.value = state.daysWorked;
+  fields.perPatientRvu.value = state.perPatientRvu;
+  fields.patientsPerDay.value = state.patientsPerDay;
+  fields.rvuValue.value = state.rvuValue;
+}
+
+function percentileOptions(selected = "") {
+  const options = ["50th", "55th", "60th", "65th", "70th", "75th", "80th", "85th", "90th", "95th"];
+  return options.map(opt => `<option value="${opt}" ${opt === selected ? "selected" : ""}>${opt}</option>`).join("");
+}
+
+function renderTiers() {
+  fields.tierRows.innerHTML = "";
+
+  state.tiers.forEach((tier, index) => {
+    const row = document.createElement("div");
+    row.className = "tier-row";
     row.innerHTML = `
-      <td><input aria-label="Percentile" type="number" min="0" step="1" value="${tier.percentile}" data-index="${index}" data-field="percentile" /></td>
-      <td><input aria-label="Threshold RVUs" type="number" min="0" step="100" value="${tier.threshold}" data-index="${index}" data-field="threshold" /></td>
-      <td><input aria-label="Bonus percent" type="number" min="0" step="1" value="${tier.bonus}" data-index="${index}" data-field="bonus" /></td>
-      <td><button class="delete-button" type="button" data-index="${index}">Delete</button></td>
+      <div class="percent-wrap">
+        <select class="percent-select" data-index="${index}" data-field="percentile">${percentileOptions(tier.percentile)}</select>
+      </div>
+      <div class="threshold-wrap">
+        <input type="number" min="0" step="1" value="${tier.threshold}" data-index="${index}" data-field="threshold" />
+      </div>
+      <div class="bonus-wrap">
+        <div class="bonus-input"><input type="number" min="0" step="0.1" value="${tier.bonus}" data-index="${index}" data-field="bonus" /><span>%</span></div>
+      </div>
+      <div class="action-wrap"><button class="action-btn remove" type="button" title="Remove tier" aria-label="Remove tier" data-remove="${index}">−</button></div>
     `;
-
-    bonusTierBody.appendChild(row);
+    fields.tierRows.appendChild(row);
   });
 
-  calculate();
+  const addRow = document.createElement("div");
+  addRow.className = "tier-row add-row";
+  addRow.innerHTML = `
+    <div class="percent-wrap"><select id="newPercentile">${percentileOptions("80th")}</select></div>
+    <div class="threshold-wrap"><input id="newThreshold" type="number" min="0" step="1" placeholder="e.g. 8000" /></div>
+    <div class="bonus-wrap"><div class="bonus-input"><input id="newBonus" type="number" min="0" step="0.1" placeholder="e.g. 20" /><span>%</span></div></div>
+    <div class="action-wrap"><button id="addTier" class="action-btn" type="button" title="Add tier" aria-label="Add tier">+</button></div>
+  `;
+  fields.tierRows.appendChild(addRow);
 }
 
 function calculate() {
-  const daysWorked = getValue(inputs.daysWorked);
-  const patientRvu = getValue(inputs.patientRvu);
-  const patientsPerDay = getValue(inputs.patientsPerDay);
-  const rvuRate = getValue(inputs.rvuRate);
-
-  const totalRvus = daysWorked * patientRvu * patientsPerDay;
-  const productionSalary = totalRvus * rvuRate;
-  const activeTier = getHighestBonusTier(totalRvus);
-  const bonusRate = activeTier ? Number(activeTier.bonus || 0) / 100 : 0;
-  const bonusAmount = productionSalary * bonusRate;
+  const annualRvus = Number(state.daysWorked) * Number(state.perPatientRvu) * Number(state.patientsPerDay);
+  const productionSalary = annualRvus * Number(state.rvuValue);
+  const sorted = [...state.tiers].sort((a, b) => Number(a.threshold) - Number(b.threshold));
+  const metTier = sorted.filter(t => annualRvus >= Number(t.threshold)).pop();
+  const bonusPct = metTier ? Number(metTier.bonus) : 0;
+  const bonusAmount = productionSalary * (bonusPct / 100);
   const finalSalary = productionSalary + bonusAmount;
 
-  outputs.totalRvus.textContent = number.format(totalRvus);
-  outputs.productionSalary.textContent = dollars.format(productionSalary);
-  outputs.bonusLabel.textContent = activeTier
-    ? `Current Bonus: ${number.format(activeTier.bonus)}% at ${number.format(activeTier.threshold)} RVUs`
-    : "Current Bonus: 0%";
-  outputs.bonusAmount.textContent = dollars.format(bonusAmount);
-  outputs.finalSalary.textContent = dollars.format(finalSalary);
+  fields.annualRvusTop.textContent = fmtNumber(annualRvus);
+  fields.rvuFormula.textContent = `${fmtNumber(state.daysWorked)} days × ${state.perPatientRvu} RVU × ${state.patientsPerDay} patients`;
+  fields.annualRvus.textContent = fmtNumber(annualRvus);
+  fields.productionSalary.textContent = fmtMoney(productionSalary);
+  fields.salaryFormula.textContent = `${fmtNumber(annualRvus)} RVUs × $${Number(state.rvuValue || 0).toFixed(2)}`;
+  fields.currentBonus.textContent = `${fmtNumber(bonusPct, bonusPct % 1 ? 1 : 0)}%`;
+  fields.bonusTierText.textContent = metTier ? `Based on ${metTier.percentile} percentile tier` : "No threshold met";
+  fields.bonusAmount.textContent = fmtMoney(bonusAmount);
+  fields.bonusFormula.textContent = `${fmtNumber(bonusPct, bonusPct % 1 ? 1 : 0)}% of Production Salary`;
+  fields.finalSalary.textContent = fmtMoney(finalSalary);
 }
 
-Object.values(inputs).forEach(input => input.addEventListener("input", calculate));
-
-bonusTierBody.addEventListener("input", event => {
-  const target = event.target;
-  if (!target.matches("input")) return;
-
-  const index = Number(target.dataset.index);
-  const field = target.dataset.field;
-  bonusTiers[index][field] = Number(target.value) || 0;
+function updateAssumption(event) {
+  const key = event.target.id;
+  state[key] = Number(event.target.value);
+  saveState();
   calculate();
+}
+
+function handleTierInput(event) {
+  const el = event.target;
+  const index = el.dataset.index;
+  const field = el.dataset.field;
+  if (index === undefined || !field) return;
+
+  state.tiers[index][field] = field === "percentile" ? el.value : Number(el.value);
+  saveState();
+  calculate();
+}
+
+function handleTierClick(event) {
+  const removeIndex = event.target.dataset.remove;
+  if (removeIndex !== undefined) {
+    state.tiers.splice(Number(removeIndex), 1);
+    saveState();
+    renderTiers();
+    calculate();
+    return;
+  }
+
+  if (event.target.id === "addTier") {
+    const percentile = document.getElementById("newPercentile").value;
+    const threshold = Number(document.getElementById("newThreshold").value);
+    const bonus = Number(document.getElementById("newBonus").value);
+
+    if (!threshold && threshold !== 0) return;
+    if (!bonus && bonus !== 0) return;
+
+    state.tiers.push({ percentile, threshold, bonus });
+    state.tiers.sort((a, b) => Number(a.threshold) - Number(b.threshold));
+    saveState();
+    renderTiers();
+    calculate();
+  }
+}
+
+[fields.daysWorked, fields.perPatientRvu, fields.patientsPerDay, fields.rvuValue].forEach(input => {
+  input.addEventListener("input", updateAssumption);
 });
+fields.tierRows.addEventListener("input", handleTierInput);
+fields.tierRows.addEventListener("change", handleTierInput);
+fields.tierRows.addEventListener("click", handleTierClick);
 
-bonusTierBody.addEventListener("click", event => {
-  const target = event.target;
-  if (!target.matches("button")) return;
-
-  const index = Number(target.dataset.index);
-  bonusTiers.splice(index, 1);
-  renderBonusTiers();
-});
-
-addTierButton.addEventListener("click", () => {
-  bonusTiers.push({ percentile: 80, threshold: 9000, bonus: 20 });
-  renderBonusTiers();
-});
-
-renderBonusTiers();
+setAssumptionInputs();
+renderTiers();
+calculate();
