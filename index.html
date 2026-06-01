@@ -24,8 +24,12 @@
         </div>
         <div class="input-grid">
           <label>
-            <span>Number of Days Worked</span>
-            <input id="daysWorked" type="number" min="0" step="1" value="265" />
+            <span>Weeks Worked Per Year</span>
+            <input id="weeksWorked" type="number" min="0" step="0.5" value="48" />
+          </label>
+          <label>
+            <span>Clinic Days Per Week</span>
+            <input id="clinicDaysPerWeek" type="number" min="0" step="0.5" value="4" />
           </label>
           <label>
             <span>Per Patient RVU</span>
@@ -37,7 +41,7 @@
           </label>
           <label>
             <span>RVU $ Value</span>
-            <div class="money-input"><span>$</span><input id="rvuValue" type="number" min="0" step="0.01" value="42" /></div>
+            <div class="money-input"><span>$</span><input id="rvuValue" type="number" min="0" step="1" value="42" /></div>
           </label>
         </div>
       </section>
@@ -45,7 +49,7 @@
       <aside class="card rvu-card">
         <p>Annual RVUs</p>
         <strong id="annualRvusTop">6,784</strong>
-        <small id="rvuFormula">265 days × 1.6 RVU × 16 patients</small>
+        <small id="rvuFormula">48 weeks × 4 days/week × 1.6 RVU × 16 patients</small>
       </aside>
     </section>
 

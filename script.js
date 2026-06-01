@@ -1,7 +1,8 @@
-const storageKey = "mgma-rvu-calculator-v2";
+const storageKey = "mgma-rvu-calculator-v3-weekly";
 
 const defaults = {
-  daysWorked: 265,
+  weeksWorked: 48,
+  clinicDaysPerWeek: 4,
   perPatientRvu: 1.6,
   patientsPerDay: 16,
   rvuValue: 42,
@@ -14,7 +15,8 @@ const defaults = {
 let state = loadState();
 
 const fields = {
-  daysWorked: document.getElementById("daysWorked"),
+  weeksWorked: document.getElementById("weeksWorked"),
+  clinicDaysPerWeek: document.getElementById("clinicDaysPerWeek"),
   perPatientRvu: document.getElementById("perPatientRvu"),
   patientsPerDay: document.getElementById("patientsPerDay"),
   rvuValue: document.getElementById("rvuValue"),
@@ -54,7 +56,8 @@ function fmtMoney(value) {
 }
 
 function setAssumptionInputs() {
-  fields.daysWorked.value = state.daysWorked;
+  fields.weeksWorked.value = state.weeksWorked;
+  fields.clinicDaysPerWeek.value = state.clinicDaysPerWeek;
   fields.perPatientRvu.value = state.perPatientRvu;
   fields.patientsPerDay.value = state.patientsPerDay;
   fields.rvuValue.value = state.rvuValue;
@@ -98,7 +101,7 @@ function renderTiers() {
 }
 
 function calculate() {
-  const annualRvus = Number(state.daysWorked) * Number(state.perPatientRvu) * Number(state.patientsPerDay);
+  const annualRvus = Number(state.weeksWorked) * Number(state.clinicDaysPerWeek) * Number(state.perPatientRvu) * Number(state.patientsPerDay);
   const productionSalary = annualRvus * Number(state.rvuValue);
   const sorted = [...state.tiers].sort((a, b) => Number(a.threshold) - Number(b.threshold));
   const metTier = sorted.filter(t => annualRvus >= Number(t.threshold)).pop();
@@ -107,7 +110,7 @@ function calculate() {
   const finalSalary = productionSalary + bonusAmount;
 
   fields.annualRvusTop.textContent = fmtNumber(annualRvus);
-  fields.rvuFormula.textContent = `${fmtNumber(state.daysWorked)} days × ${state.perPatientRvu} RVU × ${state.patientsPerDay} patients`;
+  fields.rvuFormula.textContent = `${fmtNumber(state.weeksWorked, state.weeksWorked % 1 ? 1 : 0)} weeks × ${fmtNumber(state.clinicDaysPerWeek, state.clinicDaysPerWeek % 1 ? 1 : 0)} days/week × ${state.perPatientRvu} RVU × ${state.patientsPerDay} patients`;
   fields.annualRvus.textContent = fmtNumber(annualRvus);
   fields.productionSalary.textContent = fmtMoney(productionSalary);
   fields.salaryFormula.textContent = `${fmtNumber(annualRvus)} RVUs × $${Number(state.rvuValue || 0).toFixed(2)}`;
@@ -162,7 +165,7 @@ function handleTierClick(event) {
   }
 }
 
-[fields.daysWorked, fields.perPatientRvu, fields.patientsPerDay, fields.rvuValue].forEach(input => {
+[fields.weeksWorked, fields.clinicDaysPerWeek, fields.perPatientRvu, fields.patientsPerDay, fields.rvuValue].forEach(input => {
   input.addEventListener("input", updateAssumption);
 });
 fields.tierRows.addEventListener("input", handleTierInput);
